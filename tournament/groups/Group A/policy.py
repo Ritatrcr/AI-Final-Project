@@ -36,7 +36,13 @@ class RitaVersion1(Policy):
             return 0
         
         current_player = self.get_current_player(board)
-        _ = current_player # CAMBIARRRR
+
+        # Regla tactica 1:
+        # Si puedo ganar inmediatamente, juego esa columna.
+        winning_move = self.find_winning_move(board, current_player)
+
+        if winning_move is not None:
+            return int(winning_move)
 
         # Primera version: elegir una columna valida al azar.
         return int(self.rng.choice(available_cols))
@@ -150,3 +156,20 @@ class RitaVersion1(Policy):
             return True
 
         return len(self.get_available_cols(board)) == 0
+    
+    def find_winning_move(self, board: np.ndarray, player: int) -> int | None:
+        """
+        Busca si el jugador tiene una jugada ganadora inmediata.
+        
+        Prueba cada columna disponible:
+        - simula poner la ficha del jugador
+        - revisa si con esa jugada gana
+        - si gana, retorna esa columna
+        """
+        for col in self.get_available_cols(board):
+            next_board = self.play_move(board, col, player)
+
+            if self.get_winner(next_board) == player:
+                return int(col)
+
+        return None
