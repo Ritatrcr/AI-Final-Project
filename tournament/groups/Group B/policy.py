@@ -10,7 +10,7 @@ class BrandonAgent(Policy):
     YELLOW = 1
 
     def mount(self) -> None:
-        pass
+        self.col_order = [3, 2, 4, 1, 5, 0, 6]
 
     def act(self, s: np.ndarray) -> int:
         board = np.array(s, copy=True)
@@ -22,18 +22,22 @@ class BrandonAgent(Policy):
         me = self.current_player(board)
         opp = -me
 
-        for col in legal:
+        for col in self.ordered_columns(legal):
             if self.is_winning_move(board, col, me):
                 return int(col)
 
-        for col in legal:
+        for col in self.ordered_columns(legal):
             if self.is_winning_move(board, col, opp):
                 return int(col)
 
-        return int(legal[0])
+        return int(self.ordered_columns(legal)[0])
 
     def legal_actions(self, board: np.ndarray):
         return [c for c in range(self.COLS) if board[0, c] == self.EMPTY]
+
+    def ordered_columns(self, legal):
+        legal_set = set(legal)
+        return [c for c in self.col_order if c in legal_set]
 
     def current_player(self, board: np.ndarray) -> int:
         red_count = int(np.sum(board == self.RED))
