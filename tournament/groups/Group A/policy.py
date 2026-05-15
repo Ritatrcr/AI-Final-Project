@@ -49,6 +49,9 @@ class RitaVersion1(Policy):
         # Generador aleatorio
         self.rng = np.random.default_rng(42)
 
+        # Parametro para limitar la profundidad de las simulaciones en MCTS.
+        self.rollout_depth = 42
+
 
 
     @override
@@ -267,3 +270,33 @@ class RitaVersion1(Policy):
         node.children.append(child)
 
         return child
+    
+  
+
+    def simulation(self, board: np.ndarray, player_to_move: int) -> int:
+        """
+        Fase de simulacion de MCTS.
+
+        Desde un tablero dado, completa una partida usando jugadas aleatorias.
+        Retorna el ganador:
+        -1 si gana el jugador -1
+         1 si gana el jugador 1
+         0 si hay empate o no se alcanza un ganador
+        """
+        rollout_board = board.copy()
+        current_player = player_to_move
+        depth = 0
+
+        while not self.is_terminal(rollout_board) and depth < self.rollout_depth:
+            available_cols = self.get_available_cols(rollout_board)
+
+            if not available_cols:
+                break
+
+            action = int(self.rng.choice(available_cols))
+            rollout_board = self.play_move(rollout_board, action, current_player)
+
+            current_player = self.get_opponent(current_player)
+            depth += 1
+
+        return self.get_winner(rollout_board)
