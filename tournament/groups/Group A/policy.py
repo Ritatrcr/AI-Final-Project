@@ -2,6 +2,36 @@ import numpy as np
 from connect4.policy import Policy
 from typing import override
 
+class Node:
+    """
+    Nodo simple para representar un estado dentro del arbol MCTS.
+
+    Estructura.
+    """
+
+    def __init__(
+        self,
+        board: np.ndarray,
+        player_to_move: int,
+        player_just_moved: int,
+        parent: "Node | None" = None,
+        action: int | None = None,
+        untried_actions: list[int] | None = None,
+    ) -> None:
+        
+        self.board = board
+        self.player_to_move = player_to_move
+        self.player_just_moved = player_just_moved
+        self.parent = parent
+        self.action = action
+
+        self.children: list[Node] = []
+        self.untried_actions = untried_actions if untried_actions is not None else []
+
+        self.visits = 0
+        self.total_reward = 0.0
+
+
 
 class RitaVersion1(Policy):
 
