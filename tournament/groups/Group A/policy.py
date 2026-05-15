@@ -92,3 +92,61 @@ class RitaVersion1(Policy):
                 break
 
         return new_board
+    
+    def get_winner(self, board: np.ndarray) -> int:
+        """
+        Revisa si hay cuatro fichas consecutivas de algun jugador.
+
+        Retorna:
+        -1 si gana el jugador -1
+         1 si gana el jugador 1
+         0 si nadie ha ganado
+        """
+
+        directions = [
+            (0, 1),    # Horizontal
+            (1, 0),    # Vertical
+            (1, 1),    # Diagonal descendente
+            (1, -1),   # Diagonal ascendente
+        ]
+
+        for row in range(self.ROWS):
+            for col in range(self.COLS):
+                player = board[row, col]
+
+                if player == self.EMPTY:
+                    continue
+
+                for d_row, d_col in directions:
+                    count = 0
+
+                    for step in range(4):
+                        r = row + d_row * step
+                        c = col + d_col * step
+
+                        if (
+                            0 <= r < self.ROWS
+                            and 0 <= c < self.COLS
+                            and board[r, c] == player
+                        ):
+                            count += 1
+                        else:
+                            break
+
+                    if count == 4:
+                        return int(player)
+
+        return 0
+
+    def is_terminal(self, board: np.ndarray) -> bool:
+        """
+        Un tablero es terminal si:
+        - alguien gano
+        - o ya no hay columnas disponibles
+        """
+        winner = self.get_winner(board)
+
+        if winner != 0:
+            return True
+
+        return len(self.get_available_cols(board)) == 0
