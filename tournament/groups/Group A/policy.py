@@ -43,9 +43,17 @@ class RitaVersion1(Policy):
 
         if winning_move is not None:
             return int(winning_move)
+        
+        # Regla tactica 2:
+        # Si el rival puede ganar en una jugada, bloqueo esa columna.
+        blocking_move = self.find_winning_move(board, self.get_opponent(current_player))
 
-        # Primera version: elegir una columna valida al azar.
-        return int(self.rng.choice(available_cols))
+        if blocking_move is not None:
+            return int(blocking_move)
+
+        # Regla simple 3:
+        # Si no hay una urgencia tactica, prefiero jugar cerca del centro.
+        return int(self.choose_center_preferred_move(available_cols))
     
 
 
@@ -160,7 +168,7 @@ class RitaVersion1(Policy):
     def find_winning_move(self, board: np.ndarray, player: int) -> int | None:
         """
         Busca si el jugador tiene una jugada ganadora inmediata.
-        
+
         Prueba cada columna disponible:
         - simula poner la ficha del jugador
         - revisa si con esa jugada gana
@@ -173,3 +181,18 @@ class RitaVersion1(Policy):
                 return int(col)
 
         return None
+    
+    def choose_center_preferred_move(self, available_cols: list[int]) -> int:
+        """
+        Escoge una columna disponible dando prioridad al centro.
+
+        En Connect-4 las columnas centrales suelen ser mejores porque permiten
+        formar mas lineas horizontales y diagonales.
+        """
+        preferred_order = [3, 2, 4, 1, 5, 0, 6]
+
+        for col in preferred_order:
+            if col in available_cols:
+                return int(col)
+
+        return int(self.rng.choice(available_cols))
