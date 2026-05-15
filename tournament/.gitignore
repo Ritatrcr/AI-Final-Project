@@ -1,0 +1,24 @@
+# Ambiente virtual
+.venv/
+
+# Resultados / partidas del torneo
+versus/
+
+# Archivos de Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Sistema operativo
+.DS_Store
+
+# IDEs / editores
+.vscode/
+.idea/
+
+# Logs
+*.log
