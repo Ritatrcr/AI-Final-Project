@@ -226,3 +226,44 @@ class RitaVersion1(Policy):
                 return int(col)
 
         return int(self.rng.choice(available_cols))
+
+
+
+#MCTS---------------------------------------------------------
+
+    def expansion(self, node: Node) -> Node:
+        """
+        Fase de expansion de MCTS.
+
+        Si el nodo tiene acciones no probadas, se escoge una,
+        se simula esa jugada y se crea un nuevo nodo hijo.
+
+        Si el nodo ya es terminal o no tiene acciones pendientes,
+        se retorna el mismo nodo.
+        """
+        if self.is_terminal(node.board) or not node.untried_actions:
+            return node
+
+        # Escogemos una accion no probada.
+        action_index = int(self.rng.integers(len(node.untried_actions)))
+        action = node.untried_actions.pop(action_index)
+
+        # Simulamos la jugada en el tablero.
+        next_board = self.play_move(node.board, action, node.player_to_move)
+
+        # Cambiamos el turno al rival.
+        next_player = self.get_opponent(node.player_to_move)
+
+        # Creamos el hijo.
+        child = Node(
+            board=next_board,
+            player_to_move=next_player,
+            player_just_moved=node.player_to_move,
+            parent=node,
+            action=action,
+            untried_actions=self.get_available_cols(next_board),
+        )
+
+        node.children.append(child)
+
+        return child
