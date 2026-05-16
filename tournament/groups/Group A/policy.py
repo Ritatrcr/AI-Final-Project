@@ -1,7 +1,9 @@
+import math
+import time
+
 import numpy as np
 from connect4.policy import Policy
 from typing import override
-import math
 
 
 class Node:
@@ -46,6 +48,8 @@ class RitaVersion1(Policy):
     PLAYER_1_VALUE = -1
     PLAYER_2_VALUE = 1
 
+
+
     @override
     def mount(self) -> None:
         # Generador aleatorio
@@ -57,6 +61,11 @@ class RitaVersion1(Policy):
         # Constante de exploracion de UCB.
         # sqrt(2) es un valor clasico para balancear exploracion y explotacion.
         self.exploration_c = math.sqrt(2)
+
+        # Presupuesto de MCTS.
+        # el agente intenta hacer 350 veces este proceso antes de decidir una columna.
+        self.num_iterations = 350
+        self.time_limit = 0.7
 
 
 
@@ -90,9 +99,38 @@ class RitaVersion1(Policy):
         if blocking_move is not None:
             return int(blocking_move)
 
-        # Regla simple 3:
-        # Si no hay una urgencia tactica, prefiero jugar cerca del centro.
-        return int(self.choose_center_preferred_move(available_cols))
+
+
+        # Si no hay jugada ganadora ni bloqueo urgente, usamos MCTS.
+        root = Node(
+            board=board,
+            player_to_move=current_player,
+            player_just_moved=self.get_opponent(current_player),
+            parent=None,
+            action=None,
+            untried_actions=available_cols.copy(),
+        )
+
+        start_time = time.time()
+        iterations = 0
+
+        while iterations < self.num_iterations and time.time() - start_time < self.time_limit:
+            node = self.selection(root)
+            node = self.expansion(node)
+            winner = self.simulation(node.board, node.player_to_move)
+            self.backpropagation(node, winner)
+            iterations += 1
+
+        # Si por alguna razon MCTS no alcanzo a expandir ningun hijo,
+        # usamos la regla simple de preferir el centro.
+        if not root.children:
+            return int(self.choose_center_preferred_move(available_cols))
+
+        # La accion final se elige por el hijo mas visitado.
+        # Esto suele ser mas estable que elegir solo por mayor recompensa promedio.
+        best_child = max(root.children, key=lambda child: child.visits)
+
+        return int(best_child.action)
     
 
 
