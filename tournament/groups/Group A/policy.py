@@ -3,7 +3,7 @@ import time
 
 import numpy as np
 from connect4.policy import Policy
-from typing import override
+
 
 
 class Node:
@@ -50,8 +50,7 @@ class RitaVersion1(Policy):
 
 
 
-    @override
-    def mount(self) -> None:
+    def mount(self, timeout: float | None = None) -> None:
         # Generador aleatorio
         self.rng = np.random.default_rng(42)
 
@@ -69,10 +68,12 @@ class RitaVersion1(Policy):
 
 
 
-    @override
     def act(self, s: np.ndarray) -> int:
 
-        #Copia de Tablero
+        if not hasattr(self, "num_iterations"):
+            self.mount()
+
+        # Copia de Tablero
         board = np.array(s, copy=True)
 
         # Obtener las columnas disponibles para jugar.

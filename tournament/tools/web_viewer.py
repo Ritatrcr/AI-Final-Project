@@ -5,6 +5,10 @@ import inspect
 import importlib.util
 from pathlib import Path
 
+# Esto ayuda a que Streamlit encuentre la carpeta connect4/
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(PROJECT_ROOT))
+
 import numpy as np
 import streamlit as st
 
@@ -12,8 +16,12 @@ import streamlit as st
 ROWS = 6
 COLS = 7
 EMPTY = 0
-P1 = 1
-P2 = -1
+
+# Formato consistente con el torneo:
+# primer jugador = -1
+# segundo jugador = 1
+P1 = -1
+P2 = 1
 
 
 # ------------------------------------------------------------
@@ -39,9 +47,11 @@ class CenterAgent:
     def act(self, s: np.ndarray) -> int:
         legal = legal_actions(s)
         order = [3, 2, 4, 1, 5, 0, 6]
+
         for c in order:
             if c in legal:
                 return c
+
         return int(legal[0])
 
 
@@ -59,34 +69,43 @@ def legal_actions(board: np.ndarray):
 
 def apply_move(board: np.ndarray, col: int, player: int):
     new = board.copy()
+
     for r in range(ROWS - 1, -1, -1):
         if new[r, col] == EMPTY:
             new[r, col] = player
             return new
+
     raise ValueError(f"Columna llena: {col}")
 
 
 def check_winner(board: np.ndarray):
-    # Retorna 1 si gana P1, -1 si gana P2, 0 si no hay ganador.
+    # Retorna -1 si gana P1, 1 si gana P2, 0 si no hay ganador.
     directions = [
-        (0, 1),   # horizontal
-        (1, 0),   # vertical
-        (1, 1),   # diagonal \
-        (1, -1),  # diagonal /
+        (0, 1),    # horizontal
+        (1, 0),    # vertical
+        (1, 1),    # diagonal \
+        (1, -1),   # diagonal /
     ]
 
     for r in range(ROWS):
         for c in range(COLS):
             player = board[r, c]
+
             if player == EMPTY:
                 continue
 
             for dr, dc in directions:
                 count = 0
+
                 for k in range(4):
                     rr = r + dr * k
                     cc = c + dc * k
-                    if 0 <= rr < ROWS and 0 <= cc < COLS and board[rr, cc] == player:
+
+                    if (
+                        0 <= rr < ROWS
+                        and 0 <= cc < COLS
+                        and board[rr, cc] == player
+                    ):
                         count += 1
                     else:
                         break
@@ -120,6 +139,7 @@ def load_module_from_path(path: str):
     module = importlib.util.module_from_spec(spec)
     sys.modules[module_name] = module
     spec.loader.exec_module(module)
+
     return module
 
 
@@ -144,25 +164,41 @@ def find_policy_class(module):
     return candidates[0]
 
 
+def call_mount(agent):
+    """
+    Algunos agentes tienen mount().
+    Otros tienen mount(timeout).
+    Este helper intenta soportar ambos casos.
+    """
+    if not hasattr(agent, "mount"):
+        return
+
+    try:
+        agent.mount()
+    except TypeError:
+        agent.mount(1.0)
+
+
 def load_agent(agent_source: str):
     agent_source = agent_source.strip()
 
     if agent_source.upper() == "RANDOM":
         agent = RandomAgent()
-        agent.mount()
+        call_mount(agent)
         return agent
 
     if agent_source.upper() == "CENTER":
         agent = CenterAgent()
-        agent.mount()
+        call_mount(agent)
         return agent
+
+    if agent_source.upper() == "HUMAN":
+        raise ValueError("HUMAN no se carga como agente automático.")
 
     module = load_module_from_path(agent_source)
     cls = find_policy_class(module)
     agent = cls()
-
-    if hasattr(agent, "mount"):
-        agent.mount()
+    call_mount(agent)
 
     return agent
 
@@ -197,6 +233,7 @@ def get_agent_action(agent, board, player, state_mode, indexing_mode):
     state = board_for_agent(board, player, state_mode)
     raw_action = agent.act(state)
     action = normalize_action(raw_action, indexing_mode)
+
     return int(action), raw_action
 
 
@@ -254,25 +291,31 @@ def board_to_html(board: np.ndarray):
     html += "</div>"
 
     html += "<div class='board'>"
+
     for r in range(ROWS):
         html += "<div class='row'>"
+
         for c in range(COLS):
             val = board[r, c]
+
             if val == P1:
                 cls = "cell p1"
             elif val == P2:
                 cls = "cell p2"
             else:
                 cls = "cell empty"
+
             html += f"<div class='{cls}'></div>"
+
         html += "</div>"
+
     html += "</div>"
 
     return html
 
 
 # ------------------------------------------------------------
-# Ejecución de partida
+# Ejecución automática de partida agente vs agente
 # ------------------------------------------------------------
 
 def play_match(agent1, agent2, state_mode, indexing_mode, delay):
@@ -336,6 +379,200 @@ def play_match(agent1, agent2, state_mode, indexing_mode, delay):
 
 
 # ------------------------------------------------------------
+# Modo interactivo: jugar contra una persona real
+# ------------------------------------------------------------
+
+def is_human_source(agent_source: str) -> bool:
+    return agent_source.strip().upper() == "HUMAN"
+
+
+def rerun_app():
+    try:
+        st.rerun()
+    except AttributeError:
+        st.experimental_rerun()
+
+
+def init_interactive_match(agent1_source, agent2_source, state_mode, indexing_mode):
+    agent1_is_human = is_human_source(agent1_source)
+    agent2_is_human = is_human_source(agent2_source)
+
+    agent1 = None if agent1_is_human else load_agent(agent1_source)
+    agent2 = None if agent2_is_human else load_agent(agent2_source)
+
+    st.session_state.interactive_match = {
+        "board": new_board(),
+        "player": P1,
+        "history": [],
+        "turn": 0,
+        "winner": 0,
+        "msg": "En juego",
+        "game_over": False,
+        "agent1": agent1,
+        "agent2": agent2,
+        "agent1_is_human": agent1_is_human,
+        "agent2_is_human": agent2_is_human,
+        "state_mode": state_mode,
+        "indexing_mode": indexing_mode,
+    }
+
+
+def current_player_is_human(match):
+    if match["player"] == P1:
+        return match["agent1_is_human"]
+
+    return match["agent2_is_human"]
+
+
+def get_current_agent(match):
+    if match["player"] == P1:
+        return match["agent1"]
+
+    return match["agent2"]
+
+
+def get_current_player_name(match):
+    if match["player"] == P1:
+        return "Agente 1 / Rojo"
+
+    return "Agente 2 / Amarillo"
+
+
+def apply_interactive_action(action, raw_action):
+    match = st.session_state.interactive_match
+
+    if match["game_over"]:
+        return
+
+    board = match["board"]
+    player = match["player"]
+    legal = legal_actions(board)
+    player_name = get_current_player_name(match)
+
+    if action not in legal:
+        match["game_over"] = True
+        match["winner"] = P2 if player == P1 else P1
+        match["msg"] = (
+            f"{player_name} hizo una acción inválida. "
+            f"Acción original: {raw_action}, acción interpretada: {action}, legales: {legal}"
+        )
+        return
+
+    board = apply_move(board, action, player)
+
+    match["turn"] += 1
+    match["board"] = board
+
+    match["history"].append({
+        "turn": match["turn"],
+        "player": "P1 / Rojo" if player == P1 else "P2 / Amarillo",
+        "raw_action": raw_action,
+        "interpreted_action": action,
+    })
+
+    winner = check_winner(board)
+
+    if winner != 0:
+        match["game_over"] = True
+        match["winner"] = winner
+        match["msg"] = "Victoria normal"
+        return
+
+    if is_draw(board):
+        match["game_over"] = True
+        match["winner"] = 0
+        match["msg"] = "Empate"
+        return
+
+    match["player"] *= -1
+
+
+def run_agent_turns_until_human():
+    if "interactive_match" not in st.session_state:
+        return
+
+    match = st.session_state.interactive_match
+
+    while not match["game_over"] and not current_player_is_human(match):
+        agent = get_current_agent(match)
+        player = match["player"]
+
+        try:
+            action, raw_action = get_agent_action(
+                agent=agent,
+                board=match["board"],
+                player=player,
+                state_mode=match["state_mode"],
+                indexing_mode=match["indexing_mode"],
+            )
+        except Exception as e:
+            match["game_over"] = True
+            match["winner"] = P2 if player == P1 else P1
+            match["msg"] = f"Error en {get_current_player_name(match)}: {e}"
+            return
+
+        apply_interactive_action(action, raw_action)
+
+
+def render_interactive_match():
+    if "interactive_match" not in st.session_state:
+        st.info("Presiona 'Iniciar/Reiniciar partida' para comenzar.")
+        return
+
+    run_agent_turns_until_human()
+
+    match = st.session_state.interactive_match
+    board = match["board"]
+
+    st.subheader("Partida interactiva")
+    st.markdown(board_to_html(board), unsafe_allow_html=True)
+
+    if match["game_over"]:
+        st.subheader("Resultado")
+
+        if match["winner"] == P1:
+            st.success(f"Gana Agente 1 / Rojo. Motivo: {match['msg']}")
+        elif match["winner"] == P2:
+            st.success(f"Gana Agente 2 / Amarillo. Motivo: {match['msg']}")
+        else:
+            st.warning(f"Empate. Motivo: {match['msg']}")
+
+        st.subheader("Historial de movimientos")
+        st.dataframe(match["history"], use_container_width=True)
+        return
+
+    player_name = get_current_player_name(match)
+    legal = legal_actions(board)
+
+    st.info(f"Turno de {player_name}")
+
+    if current_player_is_human(match):
+        st.markdown("### Elige una columna")
+
+        button_cols = st.columns(COLS)
+
+        for col in range(COLS):
+            disabled = col not in legal
+
+            if button_cols[col].button(
+                f"Col {col}",
+                disabled=disabled,
+                key=f"human_move_{match['turn']}_{col}",
+            ):
+                apply_interactive_action(col, col)
+                run_agent_turns_until_human()
+                rerun_app()
+
+    else:
+        st.info("Turno del agente. Actualizando...")
+        run_agent_turns_until_human()
+        rerun_app()
+
+    st.subheader("Historial de movimientos")
+    st.dataframe(match["history"], use_container_width=True)
+
+
+# ------------------------------------------------------------
 # Streamlit App
 # ------------------------------------------------------------
 
@@ -346,7 +583,7 @@ st.set_page_config(
 )
 
 st.title("Connect-4 Agent Viewer")
-st.caption("Interfaz local para enfrentar agentes cargados desde archivos policy.py")
+st.caption("Interfaz local para enfrentar agentes o jugar contra una persona real")
 
 with st.sidebar:
     st.header("Configuración")
@@ -354,15 +591,15 @@ with st.sidebar:
     st.markdown("### Agente 1 / Rojo")
     agent1_path = st.text_input(
         "Ruta del Agente 1",
-        value="groups/Group A/policy.py",
-        help="También puedes escribir RANDOM o CENTER.",
+        value="groups/Group B/policy.py",
+        help="También puedes escribir RANDOM, CENTER o HUMAN.",
     )
 
     st.markdown("### Agente 2 / Amarillo")
     agent2_path = st.text_input(
         "Ruta del Agente 2",
         value="RANDOM",
-        help="También puedes escribir RANDOM o CENTER.",
+        help="También puedes escribir RANDOM, CENTER o HUMAN.",
     )
 
     st.markdown("### Compatibilidad")
@@ -377,7 +614,7 @@ with st.sidebar:
         options=["raw_board", "current_player_as_1"],
         index=0,
         help=(
-            "raw_board envía el tablero con 1 para rojo y -1 para amarillo. "
+            "raw_board envía el tablero con -1 para rojo y 1 para amarillo. "
             "current_player_as_1 multiplica el tablero por el jugador actual."
         ),
     )
@@ -393,14 +630,15 @@ with st.sidebar:
 col1, col2 = st.columns([2, 1])
 
 with col1:
-    st.subheader("Tablero")
+    st.subheader("Tablero inicial")
     st.markdown(board_to_html(new_board()), unsafe_allow_html=True)
 
 with col2:
     st.subheader("Uso rápido")
     st.code(
-        "streamlit run tools/web_viewer.py\n\n"
+        "PYTHONPATH=. streamlit run tools/web_viewer.py\n\n"
         "Ejemplos de agentes:\n"
+        "HUMAN\n"
         "RANDOM\n"
         "CENTER\n"
         "groups/Group A/policy.py\n"
@@ -411,30 +649,51 @@ with col2:
 
 st.divider()
 
-if st.button("Jugar partida", type="primary"):
-    try:
-        agent1 = load_agent(agent1_path)
-        agent2 = load_agent(agent2_path)
+human_mode = is_human_source(agent1_path) or is_human_source(agent2_path)
 
-        final_board, history, winner, msg = play_match(
-            agent1=agent1,
-            agent2=agent2,
-            state_mode=state_mode,
-            indexing_mode=indexing_mode,
-            delay=delay,
-        )
+if human_mode:
+    st.info("Modo interactivo activado. Usa HUMAN como Agente 1 o Agente 2.")
 
-        st.subheader("Resultado")
+    if st.button("Iniciar/Reiniciar partida", type="primary"):
+        try:
+            init_interactive_match(
+                agent1_source=agent1_path,
+                agent2_source=agent2_path,
+                state_mode=state_mode,
+                indexing_mode=indexing_mode,
+            )
+            run_agent_turns_until_human()
+            rerun_app()
+        except Exception as e:
+            st.error(f"No se pudo iniciar la partida interactiva: {e}")
 
-        if winner == P1:
-            st.success(f"Gana Agente 1 / Rojo. Motivo: {msg}")
-        elif winner == P2:
-            st.success(f"Gana Agente 2 / Amarillo. Motivo: {msg}")
-        else:
-            st.warning(f"Empate. Motivo: {msg}")
+    render_interactive_match()
 
-        st.subheader("Historial de movimientos")
-        st.dataframe(history, use_container_width=True)
+else:
+    if st.button("Jugar partida", type="primary"):
+        try:
+            agent1 = load_agent(agent1_path)
+            agent2 = load_agent(agent2_path)
 
-    except Exception as e:
-        st.error(f"No se pudo ejecutar la partida: {e}")
+            final_board, history, winner, msg = play_match(
+                agent1=agent1,
+                agent2=agent2,
+                state_mode=state_mode,
+                indexing_mode=indexing_mode,
+                delay=delay,
+            )
+
+            st.subheader("Resultado")
+
+            if winner == P1:
+                st.success(f"Gana Agente 1 / Rojo. Motivo: {msg}")
+            elif winner == P2:
+                st.success(f"Gana Agente 2 / Amarillo. Motivo: {msg}")
+            else:
+                st.warning(f"Empate. Motivo: {msg}")
+
+            st.subheader("Historial de movimientos")
+            st.dataframe(history, use_container_width=True)
+
+        except Exception as e:
+            st.error(f"No se pudo ejecutar la partida: {e}")
