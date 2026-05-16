@@ -204,6 +204,26 @@ class RitaVersion1(Policy):
             node = node.parent
 
 
+    def selection(self, node: Node) -> Node:
+        """
+        Fase de seleccion de MCTS.
+
+        Baja por el arbol mientras:
+        - el nodo no sea terminal
+        - el nodo ya no tenga acciones pendientes por probar
+
+        Si el nodo tiene acciones sin probar, se detiene ahi para que expansion()
+        pueda crear un nuevo hijo.
+        """
+        while not self.is_terminal(node.board) and len(node.untried_actions) == 0:
+            if not node.children:
+                return node
+
+            node = self.best_ucb_child(node)
+
+        return node
+
+
     # MCTS: UCB ------------------------------------------------------------
     
 
