@@ -90,7 +90,90 @@ class RitaVersion1(Policy):
     
 
 
-#Helpers
+
+# MCTS---------------------------------------------------------
+
+    def expansion(self, node: Node) -> Node:
+        """
+        Fase de expansion de MCTS.
+
+        Si el nodo tiene acciones no probadas, se escoge una,
+        se simula esa jugada y se crea un nuevo nodo hijo.
+
+        Si el nodo ya es terminal o no tiene acciones pendientes,
+        se retorna el mismo nodo.
+        """
+        # revisa si puede expandir
+        if self.is_terminal(node.board) or not node.untried_actions:
+            return node
+
+        # node.untried_actions es una lista de columnas que todavía no se han expandido desde ese nodo.
+        """
+        antes:   [0, 1, 2, 3, 4, 5, 6]
+        acción:  3
+        después: [0, 1, 2, 4, 5, 6]
+        """
+        action_index = int(self.rng.integers(len(node.untried_actions))) # escoge una posición aleatoria dentro de la lista.
+        action = node.untried_actions.pop(action_index) # saca esa accion de la lista 
+
+        # Simulamos la jugada en el tablero. play_move() no modifica el tablero original. Crea una copia y pone la ficha ahí.
+        next_board = self.play_move(node.board, action, node.player_to_move)
+        """ 
+        node.board es el tablero viejo.
+        next_board es el tablero nuevo después de la jugada.
+        """
+
+        # Cambiamos el turno al rival.
+        next_player = self.get_opponent(node.player_to_move)
+
+        # Creamos el hijo.
+        child = Node(
+            board=next_board,
+            player_to_move=next_player,
+            player_just_moved=node.player_to_move,
+            parent=node,
+            action=action,
+            untried_actions=self.get_available_cols(next_board),
+        )
+
+        # agrega hijo al nodo padre
+        node.children.append(child)
+
+        return child
+    
+  
+
+    def simulation(self, board: np.ndarray, player_to_move: int) -> int:
+        """
+        Fase de simulacion de MCTS.
+
+        Desde un tablero dado, completa una partida usando jugadas aleatorias.
+        Retorna el ganador:
+        -1 si gana el jugador -1
+         1 si gana el jugador 1
+         0 si hay empate o no se alcanza un ganador
+        """
+        rollout_board = board.copy()
+        current_player = player_to_move
+        depth = 0
+
+        while not self.is_terminal(rollout_board) and depth < self.rollout_depth:
+            available_cols = self.get_available_cols(rollout_board)
+
+            if not available_cols:
+                break
+
+            action = int(self.rng.choice(available_cols))
+            rollout_board = self.play_move(rollout_board, action, current_player)
+
+            current_player = self.get_opponent(current_player)
+            depth += 1
+
+        return self.get_winner(rollout_board)
+    
+
+
+# Helpers----------------------------------------------------------
     def get_available_cols(self, board: np.ndarray) -> list[int]:
         """
         Retorna las columnas donde todavia se puede jugar (que no esten llenas).
@@ -230,73 +313,3 @@ class RitaVersion1(Policy):
 
         return int(self.rng.choice(available_cols))
 
-
-
-#MCTS---------------------------------------------------------
-
-    def expansion(self, node: Node) -> Node:
-        """
-        Fase de expansion de MCTS.
-
-        Si el nodo tiene acciones no probadas, se escoge una,
-        se simula esa jugada y se crea un nuevo nodo hijo.
-
-        Si el nodo ya es terminal o no tiene acciones pendientes,
-        se retorna el mismo nodo.
-        """
-        if self.is_terminal(node.board) or not node.untried_actions:
-            return node
-
-        # Escogemos una accion no probada.
-        action_index = int(self.rng.integers(len(node.untried_actions)))
-        action = node.untried_actions.pop(action_index)
-
-        # Simulamos la jugada en el tablero.
-        next_board = self.play_move(node.board, action, node.player_to_move)
-
-        # Cambiamos el turno al rival.
-        next_player = self.get_opponent(node.player_to_move)
-
-        # Creamos el hijo.
-        child = Node(
-            board=next_board,
-            player_to_move=next_player,
-            player_just_moved=node.player_to_move,
-            parent=node,
-            action=action,
-            untried_actions=self.get_available_cols(next_board),
-        )
-
-        node.children.append(child)
-
-        return child
-    
-  
-
-    def simulation(self, board: np.ndarray, player_to_move: int) -> int:
-        """
-        Fase de simulacion de MCTS.
-
-        Desde un tablero dado, completa una partida usando jugadas aleatorias.
-        Retorna el ganador:
-        -1 si gana el jugador -1
-         1 si gana el jugador 1
-         0 si hay empate o no se alcanza un ganador
-        """
-        rollout_board = board.copy()
-        current_player = player_to_move
-        depth = 0
-
-        while not self.is_terminal(rollout_board) and depth < self.rollout_depth:
-            available_cols = self.get_available_cols(rollout_board)
-
-            if not available_cols:
-                break
-
-            action = int(self.rng.choice(available_cols))
-            rollout_board = self.play_move(rollout_board, action, current_player)
-
-            current_player = self.get_opponent(current_player)
-            depth += 1
-
-        return self.get_winner(rollout_board)
