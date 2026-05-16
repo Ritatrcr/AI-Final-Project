@@ -1,6 +1,8 @@
 import numpy as np
 from connect4.policy import Policy
 from typing import override
+import math
+
 
 class Node:
     """
@@ -51,6 +53,10 @@ class RitaVersion1(Policy):
 
         # Parametro para limitar la profundidad de las simulaciones en MCTS.
         self.rollout_depth = 42
+
+        # Constante de exploracion de UCB.
+        # sqrt(2) es un valor clasico para balancear exploracion y explotacion.
+        self.exploration_c = math.sqrt(2)
 
 
 
@@ -153,9 +159,12 @@ class RitaVersion1(Policy):
          1 si gana el jugador 1
          0 si hay empate o no se alcanza un ganador
         """
+
+
         rollout_board = board.copy()
         current_player = player_to_move
         depth = 0
+
 
         while not self.is_terminal(rollout_board) and depth < self.rollout_depth:
             available_cols = self.get_available_cols(rollout_board)
@@ -163,14 +172,68 @@ class RitaVersion1(Policy):
             if not available_cols:
                 break
 
-            action = int(self.rng.choice(available_cols))
-            rollout_board = self.play_move(rollout_board, action, current_player)
+            action = int(self.rng.choice(available_cols)) # escoge accion aleatoria
+            rollout_board = self.play_move(rollout_board, action, current_player) # juega esa accion en el tablero de simulacion
 
             current_player = self.get_opponent(current_player)
             depth += 1
 
         return self.get_winner(rollout_board)
     
+    def backpropagation(self, node: Node, winner: int) -> None:
+        """
+        Fase de backpropagation de MCTS.
+
+        Despues de una simulacion, subimos desde el nodo actual hasta la raiz
+        actualizando:
+        - visits: cuantas veces se visito el nodo
+        - total_reward: recompensa acumulada desde la perspectiva del jugador
+          que hizo la jugada que llevo a ese nodo
+        """
+        while node is not None:
+            node.visits += 1
+
+            if winner == 0:
+                reward = 0.0
+            elif winner == node.player_just_moved:
+                reward = 1.0
+            else:
+                reward = -1.0
+
+            node.total_reward += reward
+            node = node.parent
+
+
+    # MCTS: UCB ------------------------------------------------------------
+    
+
+    def best_ucb_child(self, node: Node) -> Node:
+        """
+        Escoge el hijo con mejor puntaje UCB.
+
+        UCB balancea:
+        - explotacion: que tan bueno ha sido el hijo
+        - exploracion: que tan poco se ha visitado
+        """
+        return max(node.children, key=lambda child: self.ucb_score(node, child))
+
+    def ucb_score(self, parent: Node, child: Node) -> float:
+        """
+        Calcula el puntaje UCB de un hijo.
+
+        Formula:
+        UCB = promedio_recompensa + c * sqrt(log(visitas_padre) / visitas_hijo)
+        """
+        if child.visits == 0:
+            return math.inf
+
+        average_reward = child.total_reward / child.visits
+
+        exploration = self.exploration_c * math.sqrt(
+            math.log(parent.visits + 1) / child.visits
+        )
+
+        return average_reward + exploration
 
 
 # Helpers----------------------------------------------------------
