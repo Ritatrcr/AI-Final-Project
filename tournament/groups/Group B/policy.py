@@ -8,9 +8,10 @@ class BrandonAgent(Policy):
     EMPTY = 0
     RED = -1
     YELLOW = 1
+    col_order = [3, 2, 4, 1, 5, 0, 6]  # define el orden de preferencia de columnas.
 
-    def mount(self) -> None:        # configura la variable ante de iniciar
-        self.col_order = [3, 2, 4, 1, 5, 0, 6]  # define el orden de preferencia de columnas.
+    def mount(self, timeout=None) -> None:       # configura la variable ante de iniciar
+        pass
     
     def act(self, s: np.ndarray) -> int: #act recibe el estado actual del tablero s y retorna una columna entre 0 y 6
         board = np.array(s, copy=True)
