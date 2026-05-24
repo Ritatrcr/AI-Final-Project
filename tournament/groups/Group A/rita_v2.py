@@ -106,6 +106,29 @@ class RitaVersion1(Policy):
         if blocking_move is not None:
             return int(blocking_move)
 
+        # Regla tactica 3:
+        # Si puedo crear una amenaza doble, juego esa columna.
+        double_threat_move = self.find_double_threat_move(
+            board=board,
+            player=current_player,
+            candidate_actions=safe_actions,
+        )
+
+        if double_threat_move is not None:
+            return int(double_threat_move)
+
+        # Regla tactica 4:
+        # Si el rival puede crear una amenaza doble, intento ocupar esa columna.
+        opponent_double_threat = self.find_double_threat_move(
+            board=board,
+            player=self.get_opponent(current_player),
+            candidate_actions=available_cols,
+        )
+
+        if opponent_double_threat is not None and opponent_double_threat in safe_actions:
+            return int(opponent_double_threat)
+
+
 
         # Si no hay jugada ganadora ni bloqueo urgente, usamos MCTS.
         root = Node(
@@ -438,4 +461,60 @@ class RitaVersion1(Policy):
                 return int(col)
 
         return int(self.rng.choice(available_cols))
+
+
+    def count_winning_moves(self, board: np.ndarray, player: int) -> int:
+        """
+        Cuenta cuantas columnas permiten ganar inmediatamente.
+
+        Esto sirve para detectar amenazas dobles.
+        Si despues de una jugada tengo 2 o mas columnas ganadoras,
+        el rival normalmente solo puede bloquear una.
+        """
+
+        count = 0
+
+        for col in self.get_available_cols(board):
+            next_board = self.play_move(board, col, player)
+
+            if self.get_winner(next_board) == player:
+                count += 1
+
+        return count
+
+
+    def find_double_threat_move(
+        self,
+        board: np.ndarray,
+        player: int,
+        candidate_actions: list[int],) -> int | None:
+        """
+        Busca una jugada que cree una amenaza doble.
+
+        Una amenaza doble ocurre cuando, despues de jugar una columna,
+        el jugador queda con dos o mas formas de ganar en el siguiente turno.
+        """
+
+        double_threat_cols = []
+
+        for col in candidate_actions:
+            if col not in self.get_available_cols(board):
+                continue
+
+            next_board = self.play_move(board, col, player)
+
+            # Si esta jugada gana inmediatamente, tambien es excelente.
+            if self.get_winner(next_board) == player:
+                return int(col)
+
+            winning_moves = self.count_winning_moves(next_board, player)
+
+            if winning_moves >= 2:
+                double_threat_cols.append(col)
+
+        if not double_threat_cols:
+            return None
+
+        # Si hay varias amenazas dobles, preferimos la mas central.
+            return int(self.choose_center_preferred_move(double_threat_cols))
 
