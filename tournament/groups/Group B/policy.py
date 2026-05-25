@@ -8,7 +8,7 @@ class BrandonAgent(Policy):
     EMPTY = 0
     RED = -1
     YELLOW = 1
-    col_order = [3, 2, 4, 1, 5, 0, 6]  # define el orden de preferencia de columnas.
+    col_order = [3, 2, 4, 1, 5, 0, 6]  #define el orden de preferencia de columnas.
 
     def mount(self, timeout=None) -> None:       # configura la variable ante de iniciar
         pass
@@ -28,7 +28,9 @@ class BrandonAgent(Policy):
             if self.is_winning_move(board, col, opp):  # si el oponende tiene jugada ganadora
                 return int(col)                   # devuelve esa columna 
 
-        return int(self.ordered_columns(legal)[0]) #juega por defecto en las columnas preferidas
+        
+        # si ningina de las condiciones se cumple, evalua cada columna legal con una funcion de ventanas de 4
+        return int(self.best_heuristic_move(board, legal, me, opp))
 
 
     def legal_actions(self, board: np.ndarray): #devuelve una lista de las columnas legales
@@ -92,3 +94,89 @@ class BrandonAgent(Policy):
                         return True
 
         return False
+
+    def best_heuristic_move(self, board: np.ndarray, legal, me: int, opp: int) -> int:
+        #esta funcion prueba todas las columnas legales y escoge la que deje mejor posicion
+        best_score = -float("inf")
+        best_col = self.ordered_columns(legal)[0] #por defecto mantiene la preferencia por el centro
+
+        for col in self.ordered_columns(legal):
+            next_board = self.drop_piece(board, col, me) #simula mi jugada en esa columna
+
+            score = self.score_position(next_board, me, opp) #evalua que tan bueno queda el tablero
+
+            #seguridad tactica: evita jugadas que le regalen una victoria inmediata al rival
+            for opp_col in self.legal_actions(next_board):
+                if self.is_winning_move(next_board, opp_col, opp):
+                    score -= 100000
+                    break
+
+            if score > best_score:
+                best_score = score
+                best_col = col
+
+        return best_col
+
+    def score_position(self, board: np.ndarray, me: int, opp: int) -> int:
+        #esta funcion calcula un puntaje general del tablero usando ventanas de 4
+        score = 0
+
+        #mantiene preferencia por controlar el centro porque desde ahi hay mas combinaciones posibles
+        center_col = board[:, self.COLS // 2]
+        center_count = int(np.sum(center_col == me))
+        score += center_count * 6
+
+        #ventanas horizontales
+        for row in range(self.ROWS):
+            for col in range(self.COLS - 3):
+                window = list(board[row, col:col + 4])
+                score += self.evaluate_window(window, me, opp)
+
+        #ventanas verticales
+        for col in range(self.COLS):
+            for row in range(self.ROWS - 3):
+                window = list(board[row:row + 4, col])
+                score += self.evaluate_window(window, me, opp)
+
+        #ventanas diagonales \ 
+        for row in range(self.ROWS - 3):
+            for col in range(self.COLS - 3):
+                window = [board[row + i, col + i] for i in range(4)]
+                score += self.evaluate_window(window, me, opp)
+
+        #ventanas diagonales /
+        for row in range(3, self.ROWS):
+            for col in range(self.COLS - 3):
+                window = [board[row - i, col + i] for i in range(4)]
+                score += self.evaluate_window(window, me, opp)
+
+        return score
+
+    def evaluate_window(self, window, me: int, opp: int) -> int:
+        #esta funcion evalua una ventana de 4 casillas
+        #premia oportunidades propias y penaliza oportunidades del rival
+        me_count = window.count(me)
+        opp_count = window.count(opp)
+        empty_count = window.count(self.EMPTY)
+
+        score = 0
+
+        #ataque: ventanas que favorecen a mi agente
+        if me_count == 4:
+            score += 100000
+        elif me_count == 3 and empty_count == 1:
+            score += 80
+        elif me_count == 2 and empty_count == 2:
+            score += 20
+        elif me_count == 1 and empty_count == 3:
+            score += 1
+
+        #defensa: ventanas que favorecen al rival
+        if opp_count == 4:
+            score -= 100000
+        elif opp_count == 3 and empty_count == 1:
+            score -= 90
+        elif opp_count == 2 and empty_count == 2:
+            score -= 25
+
+        return score
