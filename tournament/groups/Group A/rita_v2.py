@@ -37,7 +37,7 @@ class Node:
 
 
 
-class RitaVersion1(Policy):
+class RitaVersion2(Policy):
 
     # board
     ROWS = 6
@@ -64,7 +64,6 @@ class RitaVersion1(Policy):
         # Presupuesto de MCTS.
         # el agente intenta hacer 350 veces este proceso antes de decidir una columna.
         self.num_iterations = 1000
-        self.time_limit = 1
 
         if timeout is None:
             self.time_limit = 0.9
@@ -75,21 +74,21 @@ class RitaVersion1(Policy):
 
     def act(self, s: np.ndarray) -> int:
 
-        #autoproteccion por si 
+        # autoproteccion por si no se ha ejecutado mount()
         if not hasattr(self, "num_iterations"):
             self.mount()
 
-        # Copia de Tablero
+        # Copia de tablero
         board = np.array(s, copy=True)
 
         # Obtener las columnas disponibles para jugar.
         available_cols = self.get_available_cols(board)
 
-        # si no hay columnas disponibles, retornamos 0.
-        # En una partida normal esto casi no deberia pasar porque seria empate
+        # Si no hay columnas disponibles, retornamos 0.
+        # En una partida normal esto casi no deberia pasar porque seria empate.
         if not available_cols:
             return 0
-        
+
         current_player = self.get_current_player(board)
 
         # Regla tactica 1:
@@ -98,37 +97,16 @@ class RitaVersion1(Policy):
 
         if winning_move is not None:
             return int(winning_move)
-        
+
         # Regla tactica 2:
         # Si el rival puede ganar en una jugada, bloqueo esa columna.
-        blocking_move = self.find_winning_move(board, self.get_opponent(current_player))
+        blocking_move = self.find_winning_move(
+            board,
+            self.get_opponent(current_player),
+        )
 
         if blocking_move is not None:
             return int(blocking_move)
-
-        # Regla tactica 3:
-        # Si puedo crear una amenaza doble, juego esa columna.
-        double_threat_move = self.find_double_threat_move(
-            board=board,
-            player=current_player,
-            candidate_actions=safe_actions,
-        )
-
-        if double_threat_move is not None:
-            return int(double_threat_move)
-
-        # Regla tactica 4:
-        # Si el rival puede crear una amenaza doble, intento ocupar esa columna.
-        opponent_double_threat = self.find_double_threat_move(
-            board=board,
-            player=self.get_opponent(current_player),
-            candidate_actions=available_cols,
-        )
-
-        if opponent_double_threat is not None and opponent_double_threat in safe_actions:
-            return int(opponent_double_threat)
-
-
 
         # Si no hay jugada ganadora ni bloqueo urgente, usamos MCTS.
         root = Node(
@@ -159,8 +137,6 @@ class RitaVersion1(Policy):
         best_child = max(root.children, key=lambda child: child.visits)
 
         return int(best_child.action)
-    
-
 
 
 # MCTS---------------------------------------------------------
@@ -219,18 +195,18 @@ class RitaVersion1(Policy):
         """
         Fase de simulacion de MCTS.
 
-        Desde un tablero dado, completa una partida usando jugadas aleatorias.
-        Retorna el ganador:
-        -1 si gana el jugador -1
-         1 si gana el jugador 1
-         0 si hay empate o no se alcanza un ganador
-        """
+        En la V1, el rollout era aleatorio.
+        En esta version, el rollout usa una politica tactica simple:
 
+        1. Si el jugador puede ganar, gana.
+        2. Si el rival puede ganar, bloquea.
+        3. Si no hay amenaza inmediata, prefiere columnas centrales.
+        4. Si no hay nada claro, prefiere columnas centrales.
+        """
 
         rollout_board = board.copy()
         current_player = player_to_move
         depth = 0
-
 
         while not self.is_terminal(rollout_board) and depth < self.rollout_depth:
             available_cols = self.get_available_cols(rollout_board)
@@ -238,13 +214,55 @@ class RitaVersion1(Policy):
             if not available_cols:
                 break
 
-            action = int(self.rng.choice(available_cols)) # escoge accion aleatoria
-            rollout_board = self.play_move(rollout_board, action, current_player) # juega esa accion en el tablero de simulacion
+            action = self.choose_rollout_action(
+                board=rollout_board,
+                player=current_player,
+                available_cols=available_cols,
+            )
+
+            rollout_board = self.play_move(
+                rollout_board,
+                action,
+                current_player,
+            )
 
             current_player = self.get_opponent(current_player)
             depth += 1
 
         return self.get_winner(rollout_board)
+
+
+    #helper simulation
+    def choose_rollout_action(
+        self,
+        board: np.ndarray,
+        player: int,
+        available_cols: list[int],
+    ) -> int:
+        """
+        Politica usada durante los rollouts.
+
+        Esta funcion reemplaza la seleccion puramente aleatoria
+        por una decision tactica simple.
+        """
+
+        opponent = self.get_opponent(player)
+
+        # 1. Si puedo ganar inmediatamente, juego esa columna.
+        winning_move = self.find_winning_move(board, player)
+
+        if winning_move is not None:
+            return int(winning_move)
+
+        # 2. Si el rival puede ganar inmediatamente, bloqueo.
+        blocking_move = self.find_winning_move(board, opponent)
+
+        if blocking_move is not None:
+            return int(blocking_move)
+
+        # 3. Si no hay jugada tactica clara, prefiero el centro.
+        return int(self.choose_center_preferred_move(available_cols))
+        
     
     def backpropagation(self, node: Node, winner: int) -> None:
         """
@@ -463,58 +481,4 @@ class RitaVersion1(Policy):
         return int(self.rng.choice(available_cols))
 
 
-    def count_winning_moves(self, board: np.ndarray, player: int) -> int:
-        """
-        Cuenta cuantas columnas permiten ganar inmediatamente.
-
-        Esto sirve para detectar amenazas dobles.
-        Si despues de una jugada tengo 2 o mas columnas ganadoras,
-        el rival normalmente solo puede bloquear una.
-        """
-
-        count = 0
-
-        for col in self.get_available_cols(board):
-            next_board = self.play_move(board, col, player)
-
-            if self.get_winner(next_board) == player:
-                count += 1
-
-        return count
-
-
-    def find_double_threat_move(
-        self,
-        board: np.ndarray,
-        player: int,
-        candidate_actions: list[int],) -> int | None:
-        """
-        Busca una jugada que cree una amenaza doble.
-
-        Una amenaza doble ocurre cuando, despues de jugar una columna,
-        el jugador queda con dos o mas formas de ganar en el siguiente turno.
-        """
-
-        double_threat_cols = []
-
-        for col in candidate_actions:
-            if col not in self.get_available_cols(board):
-                continue
-
-            next_board = self.play_move(board, col, player)
-
-            # Si esta jugada gana inmediatamente, tambien es excelente.
-            if self.get_winner(next_board) == player:
-                return int(col)
-
-            winning_moves = self.count_winning_moves(next_board, player)
-
-            if winning_moves >= 2:
-                double_threat_cols.append(col)
-
-        if not double_threat_cols:
-            return None
-
-        # Si hay varias amenazas dobles, preferimos la mas central.
-            return int(self.choose_center_preferred_move(double_threat_cols))
-
+    
