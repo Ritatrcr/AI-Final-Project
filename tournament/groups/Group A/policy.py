@@ -64,11 +64,9 @@ class RitaVersion2(Policy):
         # Presupuesto de MCTS.
         # el agente intenta hacer 350 veces este proceso antes de decidir una columna.
         self.num_iterations = 1000
-
+        
         if timeout is None:
-            self.time_limit = 0.9
-        else:
-            self.time_limit = max(0.05, min(0.9, float(timeout) * 0.80))
+            self.time_limit = 1.4
 
 
 
